@@ -1,0 +1,13 @@
+/Packages
+/Assets/Materials
+/Assets/Prefabs
+/Assets/Scenes
+/Assets/Settings
+Temp/
+UserSettings/
+ProjectSettings/
+Logs/
+Library/
+Assembly-CSharp.csproj
+/**/*.meta
+*.sln
