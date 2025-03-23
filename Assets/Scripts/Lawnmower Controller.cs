@@ -23,7 +23,7 @@ public class LawnmowerController : MonoBehaviour
     private GameObject currentGrassTarget;
 
     // Raycast Settings
-    private int numRays = 100;
+    private int numRays = 10;
     private float rayLength = 10f;
     private float rayYOffset = 0.5f;
     private float maxRayAngle = 25f;
