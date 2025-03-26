@@ -22,5 +22,9 @@ public class GrassController : MonoBehaviour
 
             gameObject.tag = "CutGrass";
         }
+        if (other.CompareTag("Obstacle")) {
+            Debug.Log("Obstacle hit!");
+            Destroy(gameObject);
+        }
     }
 }
