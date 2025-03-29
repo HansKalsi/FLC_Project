@@ -12,7 +12,7 @@ public class GrassController : MonoBehaviour
             return;
         }
         if (other.CompareTag("Player")) {
-            Debug.Log("Grass cut!");
+            // Debug.Log("Grass cut!");
             // Invert Y position then add cutYPosition (so the grass is only sticking out of the ground by the cutYPosition)
             float cutY = (transform.position.y * -1) + cutYPosition;
             transform.position = new Vector3(transform.position.x, cutY, transform.position.z);
@@ -23,7 +23,7 @@ public class GrassController : MonoBehaviour
             gameObject.tag = "CutGrass";
         }
         if (other.CompareTag("Obstacle")) {
-            Debug.Log("Obstacle hit!");
+            // Debug.Log("Obstacle hit!");
             Destroy(gameObject);
         }
     }
