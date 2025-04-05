@@ -56,6 +56,7 @@ public class WorldSetup : MonoBehaviour
 
         // Spawn lawnmower in the middle of the ground
         Vector3 spawnPos = new((minX + maxX) / 2, spawnY, (minZ + maxZ) / 2);
-        Instantiate(lawnmowerPrefab, spawnPos, Quaternion.identity);
+        var lawnmowerObj = Instantiate(lawnmowerPrefab, spawnPos, Quaternion.identity);
+        lawnmowerObj.transform.Rotate(0, 180f, 0);
     }
 }

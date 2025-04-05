@@ -28,21 +28,23 @@ public class LawnmowerController : MonoBehaviour
     void Update()
     {
         // Cast rays to detect grass
-        CastRaysAndComputeCoverage(out float leftCoverage, out float rightCoverage, out float avgHitDistance, out float obstacleDistance);
+        CastRaysAndComputeCoverage(out float leftCoverage, out float rightCoverage, out float avgGrassDistance, out float obstacleDistanceLeft, out float obstacleDistanceRight);
 
-        MoveTowardsTarget(leftCoverage, rightCoverage, avgHitDistance, obstacleDistance);
+        MoveTowardsTarget(leftCoverage, rightCoverage, avgGrassDistance, obstacleDistanceLeft, obstacleDistanceRight);
     }
 
-    void CastRaysAndComputeCoverage(out float leftCoverage, out float rightCoverage, out float avgGrassDistance, out float obstacleDistance) {
+    void CastRaysAndComputeCoverage(out float leftCoverage, out float rightCoverage, out float avgGrassDistance, out float obstacleDistanceLeft, out float obstacleDistanceRight) {
         // Default set as if no grass or obstacle hit by any raycast
         leftCoverage = -1f;
         rightCoverage = -1f;
         avgGrassDistance = -1f;
-        obstacleDistance = -1f;
+        obstacleDistanceLeft = -1f;
+        obstacleDistanceRight = -1f;
         int hitsLeft = 0;
         int hitsRight = 0;
         float distanceSum = 0f;
-        float closestObstacleDistance = 0f;
+        float closestObstacleLeftDistance = 0f;
+        float closestObstacleRightDistance = 0f;
 
         Vector3 originPos = transform.position - new Vector3(0, rayYOffset, 0);
 
@@ -61,8 +63,9 @@ public class LawnmowerController : MonoBehaviour
                     hitsLeft++;
                     distanceSum += hitLeft.distance;
                 }
-                if (hitLeft.collider.CompareTag("Obstacle") && hitLeft.distance < closestObstacleDistance) {
-                    closestObstacleDistance = hitLeft.distance;
+                if (hitLeft.collider.CompareTag("Obstacle") && (hitLeft.distance < closestObstacleLeftDistance || closestObstacleLeftDistance == 0f)) {
+                    closestObstacleLeftDistance = hitLeft.distance;
+                    Debug.Log("Obstacle hit left");
                 }
             }
             // Raycast opposite direction
@@ -71,8 +74,9 @@ public class LawnmowerController : MonoBehaviour
                     hitsRight++;
                     distanceSum += hitRight.distance;
                 }
-                if (hitRight.collider.CompareTag("Obstacle") && hitRight.distance < closestObstacleDistance) {
-                    closestObstacleDistance = hitRight.distance;
+                if (hitRight.collider.CompareTag("Obstacle") && (hitRight.distance < closestObstacleRightDistance || closestObstacleRightDistance == 0f)) {
+                    closestObstacleRightDistance = hitRight.distance;
+                    Debug.Log("Obstacle hit right");
                 }
             }
 
@@ -92,13 +96,16 @@ public class LawnmowerController : MonoBehaviour
         if (hitsLeft > 0 || hitsRight > 0) {
             avgGrassDistance = distanceSum / (hitsLeft + hitsRight);
         }
-        if (closestObstacleDistance > 0) {
-            obstacleDistance = closestObstacleDistance;
+        if (closestObstacleLeftDistance > 0) {
+            obstacleDistanceLeft = closestObstacleLeftDistance;
+        }
+        if (closestObstacleRightDistance > 0) {
+            obstacleDistanceRight = closestObstacleRightDistance;
         }
     }
 
     // Fuzzy Movement
-    void MoveTowardsTarget(float leftCoverage, float rightCoverage, float avgHitDistance, float obstacleDistance) {
+    void MoveTowardsTarget(float leftCoverage, float rightCoverage, float avgGrassDistance, float obstacleDistanceLeft, float obstacleDistanceRight) {
         // Debug.Log($"leftCoverage: {leftCoverage}, rightCoverage: {rightCoverage}, Avg Hit Distance: {avgHitDistance}, Obstacle Distance: {obstacleDistance}");
         // Coverage Difference (more on left = positive, more on right = negative)
         float coverageDifference = -1f;
@@ -122,58 +129,51 @@ public class LawnmowerController : MonoBehaviour
         float balancedCovMem = FuzzyCoverageBalanced(coverageDifference);
         float partialRightCovMem = FuzzyCoveragePartialRight(coverageDifference);
         float fullRightCovMem = FuzzyCoverageFullRight(coverageDifference);
-        Debug.Log("none Coverage membership: " + noneCovMem);
-        Debug.Log("full left Coverage membership: " + fullLeftCovMem);
-        Debug.Log("partial left Coverage membership: " + partialLeftCovMem);
-        Debug.Log("balanced Coverage membership: " + balancedCovMem);
-        Debug.Log("partial right Coverage membership: " + partialRightCovMem);
-        Debug.Log("full right Coverage membership: " + fullRightCovMem);
 
         // Distance Memberships
         // To Grass
-        float closeGrassMem = FuzzyDistanceClose(avgHitDistance);
-        float mediumGrassMem = FuzzyDistanceMedium(avgHitDistance);
-        float farGrassMem = FuzzyDistanceFar(avgHitDistance);
+        float closeGrassMem = FuzzyDistanceClose(avgGrassDistance);
+        float mediumGrassMem = FuzzyDistanceMedium(avgGrassDistance);
+        float farGrassMem = FuzzyDistanceFar(avgGrassDistance);
 
         // To Obstacle
-        float closeObstacleMem = FuzzyDistanceClose(obstacleDistance);
-        float mediumObstacleMem = FuzzyDistanceMedium(obstacleDistance);
-        float farObstacleMem = FuzzyDistanceFar(obstacleDistance);
+        float closeObstacleLeftMem = FuzzyDistanceClose(obstacleDistanceLeft) * 6;
+        float closeObstacleRightMem = FuzzyDistanceClose(obstacleDistanceRight) * 4;
 
         // Fuzzy Rules
         // Combine results to get the 'desired speed' and 'desired turn speed'
 
         // Rule 1 - If no coverage (aka no grass detected), speed is NONE & turn speed is MAX (clockwise as default)
         float rule1Strength = noneCovMem;
-        float rule1Speed = 0f;
+        float rule1Speed = minSpeed;
         float rule1TurnSpeed = maxTurnSpeed;
 
-        // Rule 2 - If left coverage is full and grass is close, speed is MIN & turn speed is NONE
+        // Rule 2 - If left coverage is full and grass is close, speed is MIN & turn speed is MEDIUM
         float rule2Strength = fullLeftCovMem * closeGrassMem;
         float rule2Speed = minSpeed;
         float rule2TurnSpeed = -maxTurnSpeed / 2;
 
-        // Rule 3 - If left coverage is full and grass is medium, speed is MEDIUM & turn speed is NONE
+        // Rule 3 - If left coverage is full and grass is medium, speed is MEDIUM & turn speed is LOW-MEDIUM
         float rule3Strength = fullLeftCovMem * mediumGrassMem;
         float rule3Speed = maxSpeed / 2;
-        float rule3TurnSpeed = -maxTurnSpeed / 2;
+        float rule3TurnSpeed = -maxTurnSpeed / 4;
 
-        // Rule 4 - If left coverage is full and grass is far, speed is MAX & turn speed is NONE
+        // Rule 4 - If left coverage is full and grass is far, speed is MAX & turn speed is LOW
         float rule4Strength = fullLeftCovMem * farGrassMem;
         float rule4Speed = maxSpeed;
-        float rule4TurnSpeed = -maxTurnSpeed / 2;
+        float rule4TurnSpeed = -maxTurnSpeed / 8;
 
-        // Rule 5 - If left coverage is partial and grass is close, speed is MIN & turn speed is HIGH
+        // Rule 5 - If left coverage is partial and grass is close, speed is MIN & turn speed is LOW-MEDIUM
         float rule5Strength = partialLeftCovMem * closeGrassMem;
         float rule5Speed = minSpeed;
-        float rule5TurnSpeed = -maxTurnSpeed;
+        float rule5TurnSpeed = -maxTurnSpeed / 4;
 
-        // Rule 6 - If left coverage is partial and grass is medium, speed is MEDIUM & turn speed is LOW-MEDIUM
+        // Rule 6 - If left coverage is partial and grass is medium, speed is MEDIUM & turn speed is MEDIUM
         float rule6Strength = partialLeftCovMem * mediumGrassMem;
         float rule6Speed = maxSpeed / 2;
-        float rule6TurnSpeed = -maxTurnSpeed;
+        float rule6TurnSpeed = -maxTurnSpeed  / 2;
 
-        // Rule 7 - If left coverage is partial and grass is far, speed is MAX & turn speed is MEDIUM
+        // Rule 7 - If left coverage is partial and grass is far, speed is MAX & turn speed is HIGH
         float rule7Strength = partialLeftCovMem * farGrassMem;
         float rule7Speed = maxSpeed;
         float rule7TurnSpeed = -maxTurnSpeed;
@@ -193,54 +193,49 @@ public class LawnmowerController : MonoBehaviour
         float rule10Speed = maxSpeed;
         float rule10TurnSpeed = 0f;
 
-        // Rule 11 - If right coverage is partial and grass is close, speed is MIN & turn speed is HIGH
+        // Rule 11 - If right coverage is partial and grass is close, speed is MIN & turn speed is LOW-MEDIUM
         float rule11Strength = partialRightCovMem * closeGrassMem;
         float rule11Speed = minSpeed;
-        float rule11TurnSpeed = maxTurnSpeed;
+        float rule11TurnSpeed = maxTurnSpeed / 4;
 
-        // Rule 12 - If right coverage is partial and grass is medium, speed is MEDIUM & turn speed is LOW-MEDIUM
+        // Rule 12 - If right coverage is partial and grass is medium, speed is MEDIUM & turn speed is MEDIUM
         float rule12Strength = partialRightCovMem * mediumGrassMem;
         float rule12Speed = maxSpeed / 2;
-        float rule12TurnSpeed = maxTurnSpeed;
+        float rule12TurnSpeed = maxTurnSpeed / 2;
 
         // Rule 13 - If right coverage is partial and grass is far, speed is MAX & turn speed is MEDIUM
         float rule13Strength = partialRightCovMem * farGrassMem;
         float rule13Speed = maxSpeed;
-        float rule13TurnSpeed = maxTurnSpeed;
+        float rule13TurnSpeed = maxTurnSpeed / 2;
 
-        // Rule 14 - If right coverage is full and grass is close, speed is MIN & turn speed is NONE
+        // Rule 14 - If right coverage is full and grass is close, speed is MIN & turn speed is MEDIUM
         float rule14Strength = fullRightCovMem * closeGrassMem;
         float rule14Speed = minSpeed;
         float rule14TurnSpeed = maxTurnSpeed / 2;
 
-        // Rule 15 - If right coverage is full and grass is medium, speed is MEDIUM & turn speed is NONE
+        // Rule 15 - If right coverage is full and grass is medium, speed is MEDIUM & turn speed is LOW-MEDIUM
         float rule15Strength = fullRightCovMem * mediumGrassMem;
         float rule15Speed = maxSpeed / 2;
-        float rule15TurnSpeed = maxTurnSpeed / 2;
+        float rule15TurnSpeed = maxTurnSpeed / 4;
 
-        // Rule 16 - If right coverage is full and grass is far, speed is MAX & turn speed is NONE
+        // Rule 16 - If right coverage is full and grass is far, speed is MAX & turn speed is LOW
         float rule16Strength = fullRightCovMem * farGrassMem;
         float rule16Speed = maxSpeed;
-        float rule16TurnSpeed = maxTurnSpeed / 2;
+        float rule16TurnSpeed = maxTurnSpeed / 8;
 
-        // Rule 17 - If obstacle is close, speed is MIN & turn speed is MAX
-        float rule17Strength = closeObstacleMem;
-        float rule17Speed = minSpeed;
+        // Rule 17 - If obstacle on the left is close, speed is MIN & turn speed is MAX
+        float rule17Strength = closeObstacleLeftMem;
+        float rule17Speed = 0f;
         float rule17TurnSpeed = maxTurnSpeed;
 
-        // Rule 18 - If obstacle is medium, speed is MEDIUM & turn speed is NONE
-        float rule18Strength = mediumObstacleMem;
-        float rule18Speed = maxSpeed / 2;
-        float rule18TurnSpeed = 0f;
-
-        // Rule 19 - If obstacle is far, speed is MAX & turn speed is NONE
-        float rule19Strength = farObstacleMem;
-        float rule19Speed = maxSpeed;
-        float rule19TurnSpeed = 0f;
+        // Rule 18 - If obstacle on the right is close, speed is MIN & turn speed is MAX
+        float rule18Strength = closeObstacleRightMem;
+        float rule18Speed = 0f;
+        float rule18TurnSpeed = -maxTurnSpeed;
 
         // Weighted Average Defuzzification
-        float totalStrengthSpeed = rule1Strength + rule2Strength + rule3Strength + rule4Strength + rule5Strength + rule6Strength + rule7Strength + rule8Strength + rule9Strength + rule10Strength + rule11Strength + rule12Strength + rule13Strength + rule14Strength + rule15Strength + rule16Strength + rule17Strength + rule18Strength + rule19Strength;
-        float totalStrengthTurn = rule1Strength + rule2Strength + rule3Strength + rule4Strength + rule5Strength + rule6Strength + rule7Strength + rule8Strength + rule9Strength + rule10Strength + rule11Strength + rule12Strength + rule13Strength + rule14Strength + rule15Strength + rule16Strength + rule17Strength + rule18Strength + rule19Strength;
+        float totalStrengthSpeed = rule1Strength + rule2Strength + rule3Strength + rule4Strength + rule5Strength + rule6Strength + rule7Strength + rule8Strength + rule9Strength + rule10Strength + rule11Strength + rule12Strength + rule13Strength + rule14Strength + rule15Strength + rule16Strength + rule17Strength + rule18Strength;
+        float totalStrengthTurn = rule1Strength + rule2Strength + rule3Strength + rule4Strength + rule5Strength + rule6Strength + rule7Strength + rule8Strength + rule9Strength + rule10Strength + rule11Strength + rule12Strength + rule13Strength + rule14Strength + rule15Strength + rule16Strength + rule17Strength + rule18Strength;
         // FIXME: bad performance - above code shouldn't run if no grass
         if (Mathf.Abs(totalStrengthSpeed) < 0.0001f) {
             Debug.Log("No speed strength " + totalStrengthSpeed);
@@ -269,8 +264,7 @@ public class LawnmowerController : MonoBehaviour
             (rule15Strength * rule15Speed) +
             (rule16Strength * rule16Speed) +
             (rule17Strength * rule17Speed) +
-            (rule18Strength * rule18Speed) +
-            (rule19Strength * rule19Speed);
+            (rule18Strength * rule18Speed);
 
         float weightedTurnSpeedSum =
             (rule1Strength * rule1TurnSpeed) +
@@ -290,8 +284,7 @@ public class LawnmowerController : MonoBehaviour
             (rule15Strength * rule15TurnSpeed) +
             (rule16Strength * rule16TurnSpeed) +
             (rule17Strength * rule17TurnSpeed) +
-            (rule18Strength * rule18TurnSpeed) +
-            (rule19Strength * rule19TurnSpeed);
+            (rule18Strength * rule18TurnSpeed);
 
         // Debug.Log($"Weighted Speed Sum: {weightedSpeedSum}, Weighted Turn Speed Sum: {weightedTurnSpeedSum}");
 
@@ -356,24 +349,6 @@ public class LawnmowerController : MonoBehaviour
         return (value - range) / (1f - range);
     }
 
-    // float FuzzyCoveragePartial(float value) {
-    //     if (value <= 0f) return 0f;
-    //     if (value >= 1f) return 0f;
-
-    //     float midpoint = 0.5f;
-    //     if (value < midpoint) {
-    //         return value / midpoint;
-    //     }
-    //     return (1f - value) / (1f - midpoint);
-    // }
-
-    // float FuzzyCoverageFull(float value) {
-    //     float range = 0.7f;
-    //     if (value <= range) return 0f;
-    //     if (value >= 1f) return 1f;
-    //     return (value - range) / (1f - range);
-    // }
-
     // Distance Fuzzy Membership Functions
     float FuzzyDistanceClose(float value) {
         if (value == -1f) return 0f;
@@ -403,23 +378,4 @@ public class LawnmowerController : MonoBehaviour
         // If in between, linearly interpolate
         return (value - mediumThreshold) / (farThreshold - mediumThreshold);
     }
-
-    // // Angle Fuzzy Membership Functions
-    // float FuzzyAngleSmall(float value) {
-    //     // Full membership if angle is less than small threshold
-    //     if (value <= smallAngleThreshold) return 1f;
-    //     // No membership if angle is greater than large threshold
-    //     if (value >= largeAngleThreshold) return 0f;
-    //     // If in between, linearly interpolate
-    //     return 1f - (value - smallAngleThreshold) / (largeAngleThreshold - smallAngleThreshold);
-    // }
-
-    // float FuzzyAngleLarge(float value) {
-    //     // Full membership if angle is greater than large threshold
-    //     if (value >= largeAngleThreshold) return 1f;
-    //     // No membership if angle is less than small threshold
-    //     if (value <= smallAngleThreshold) return 0f;
-    //     // If in between, linearly interpolate
-    //     return (value - smallAngleThreshold) / (largeAngleThreshold - smallAngleThreshold);
-    // }
 }
